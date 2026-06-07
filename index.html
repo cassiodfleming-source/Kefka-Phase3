@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>UMAD - FFXIV | P3 Bowels</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#06090f;color:#e8eef8;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+#app{display:grid;grid-template-columns:310px 1fr;grid-template-rows:58px 1fr;height:100vh}header{grid-column:1/3;display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0b111c;border-bottom:1px solid #223047}
+button{border:1px solid #344866;color:white;background:#172238;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}button:hover{background:#22324f}.green{background:#0e6b35}.red{background:#79222a}.blue{background:#10558a}
+.pill{padding:8px 12px;border:1px solid #2a3d5c;border-radius:999px;color:#bcd0ec;background:#0d1524}aside{background:#080d16;border-right:1px solid #223047;padding:12px;overflow:auto}aside.right{display:none}
+.card{border:1px solid #263853;background:rgba(12,19,31,.92);border-radius:10px;padding:12px;margin-bottom:12px}.card h3{margin:0 0 10px;font-size:14px;color:#9fb7d8;text-transform:uppercase;letter-spacing:.05em}
+.small{font-size:13px;color:#aebddb;line-height:1.4}select,input,textarea{background:#111a2b;color:#e8eef8;border:1px solid #304562;border-radius:6px;padding:6px;font-weight:700}label{display:block;margin:7px 0 3px;color:#bcd0ec;font-size:13px}
+#arenaWrap{display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at center,#111a28 0%,#06090f 75%)}canvas{width:min(100%,calc(100vh - 58px));height:min(100%,calc(100vh - 58px));max-width:100%;max-height:100%;outline:1px solid #263853}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kbd{font-family:monospace;background:#111a2b;border:1px solid #304562;padding:1px 5px;border-radius:4px}#jsonOut{width:100%;height:250px;font-family:monospace;font-size:11px;white-space:pre}table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:5px 2px;border-bottom:1px solid #223047;text-align:left}
+.log{font-size:12px;line-height:1.35;max-height:180px;overflow:auto}.log div{margin-bottom:5px;color:#c8d6ec}.ok{color:#86efac}.warn{color:#ff6b6b}.selectedName{color:#facc15;font-weight:800}
+</style></head><body>
+<div id="app"><header>
+<button class="green" id="startBtn">▶ Start</button><button class="blue" id="pauseBtn">⏸ Pause</button><button class="red" id="resetBtn">↻ Reset</button><button class="blue" id="exportBtn" style="display:none">Export</button>
+<span class="pill"><b>UMAD - FFXIV</b></span><span class="pill"><b>P3 Bowels v27</b></span><span class="pill">Phase: <b id="phaseLabel">Pre-pull</b></span><span class="pill">Time: <b id="timerLabel">0.0s</b></span><span class="pill">Selected: <b id="selectedLabel">None</b></span>
+</header>
+<aside><div class="card"><h3>Controls</h3><div class="small">Mode / player you control:<br><select id="controlledSelect" style="width:100%;margin-top:6px"><option>Spectator</option><option>T1</option><option>H1</option><option>D1</option><option>D2</option><option>T2</option><option>H2</option><option>R1</option><option>R2</option></select><br><br><span class="kbd">Spectator</span> = AI moves everyone<br><span class="kbd">WASD</span> move controlled player<br><span class="kbd">Shift</span> slow movement<br><span class="kbd">Right mouse drag</span> face cursor<br><span class="kbd">Right mouse drag</span> adjust facing</div></div>
+<div class="card"><h3>Timeline</h3><div class="small">0–2s bosses move center<br>2–5.5s Bowels of Agony<br>6s debuffs appear<br>10s bosses move: Exdeath to long crystal, Chaos between Wind + short<br>20–26s Lightning III from Exdeath<br>24–26s AI moves<br>26s short debuffs + Lightning III resolve<br>27s radial KB from crystal AoE<br>28s Wind stacks resolve<br>29–35s Thunder III tankbusters<br>36s Chaos center north, 37s Exdeath moves<br>41s Lat/Long + Kefka Trance<br>46/48s Lat/Long cones<br>50s AI move for long resolution<br>51s long debuffs resolve<br>52s radial KB<br>53s Wind stacks</div><label>Jump phase</label><select id="jumpPhase" style="width:100%"><option value="0">0 Pre-pull</option><option value="6">6 Debuffs</option><option value="10">10 Boss move</option><option value="24">24 AI position</option><option value="26">26 Short AOE resolve</option><option value="28">28 Wind stacks</option><option value="33">33 Tankbuster 1</option><option value="36">36 Chaos center</option><option value="41">41 Lat/Long cast</option><option value="46">46 Cone 1</option><option value="48">48 Cone 2</option><option value="50">50 Long AI position</option><option value="51">51 Long AOE resolve</option><option value="53">53 Wind stacks 2</option></select><button id="jumpBtn" style="margin-top:6px">Jump</button></div>
+<div class="card" style="display:none"><input type="checkbox" id="calibMode"><input type="checkbox" id="showAOE" checked><input type="checkbox" id="showSlots"><input type="checkbox" id="showLabels" checked><input type="checkbox" id="pauseAtChecks"><input type="range" id="iconSize" min="14" max="60" value="27"><input type="range" id="coneLen" min="250" max="800" value="540"><input type="range" id="coneHalf" min="15" max="55" value="32"></div>
+<div class="card"><h3>Status</h3><div id="statusBox" class="small ok">Ready.</div></div><div class="card"><h3>Log</h3><div class="log" id="logBox"></div></div></aside>
+<main id="arenaWrap"><canvas id="game" width="900" height="900"></canvas></main>
+<aside class="right"><div class="card"><h3>Selected object</h3><div class="small">Object: <span class="selectedName" id="objName">None</span></div><div class="row"><div><label>X</label><input id="objX" type="number" step="1" style="width:100%"></div><div><label>Y</label><input id="objY" type="number" step="1" style="width:100%"></div></div><div class="row"><div><label>Radius</label><input id="objR" type="number" step="1" style="width:100%"></div><div><label>Inner</label><input id="objH" type="number" step="1" style="width:100%"></div></div><button id="applyObjBtn" style="margin-top:8px">Apply</button></div>
+<div class="card"><h3>Debuffs</h3><table><thead><tr><th>P</th><th>Hero</th><th>Wind</th><th>FW</th></tr></thead><tbody id="debuffTable"></tbody></table></div><div class="card"><h3>Calibration JSON</h3><textarea id="jsonOut" spellcheck="false"></textarea><button id="copyBtn">Copy JSON</button></div></aside></div>
+<script>
+'use strict';
+const ICONS = {"entropy": "data:image/png;base64,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", "fluid": "data:image/png;base64,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", "headwind": "data:image/png;base64,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", "tailwind": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAgCAYAAAABtRhCAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAoaSURBVEhLrZZ5bFzXdYe/+968N8ubGQ6HQ5E0d1qiJIuiHFGbo5iurMhZXThoa0Zok0gJjCBwnbou3KBeErZ1AEFBY7eKA6eG7GaTk9bNigRootRQYrlStVCyJO4SyRF3DmefeTNvu/2DthQ4//YABw8495373XPve/f8xMDAgPQ8Dyklnufx/2lCCBRFAcDn863FHnroIVkqlchms1iW9Z6UPzRVVVEUBdu23zv0B6aqKoZhEIvF8Pv9aJqG2Lp1q5yamkJVVWpiMZAShEBKiXg3UwiQEgm4jkPVsgiFQoh34sDa++/mvfOsVKsUCwXi8Ti9vb0YhoGoa2iQBx95lE8d/gxaNPT7C1ybqLrGe69JKaFsYZXTWJXyO2ABaMDaTqmqyvkrV3jhyBEc06Svrw/xoYOH5aFnv4oe8JN7d8EyjyxAXkqEBIlYq7YEMrRWkRAQDksKi0UWh99mafI60vaIRKLYioVFhYgIEWuKsXTjBt89doz+/n6Uxg3dWLqftAf5fIn5+QWS44tMjt8kNT5BZmWWciWL9GxEzMV1TFJLS+TyeVbzEr3WYN32HvwN66hUs6ys3MR2XcqVCkvZFDNT0ziahgRM08SnAkXHYWE+Q2n+OsXFBazSKmZZIslBCZSoQbzrDrq2baOxxiBSW8fEtVlM28aK1dIRb8Lbt4+hlSR2ZhWrkIdAFK8yR9lWMUIJdE3DdV3Urj17B101xsK1C6zcnCS7Mk85ncGu2pQqJSqFIubiIumZJMnLE6xmMrRt7mRdk8H05AKmlHg+j6aGGixLMv32JcxClURbgmzawqzkCfkFo0NDNDQ0oDY3dw+axTTpxRlkRRLrbKFt5y4679/B5r27Wb9rO/W9GxGew/Jciuz0AteGRqltbeGurju4NjyHpfupj8cIhBQun7pINTuHv6sTT1iYK6vo/iATly7S2NiIGownBnPVHHpNE/Gt6wm3tOBWLbJTY0xfGmF+dJhKqUisdT0b3reFvG2zPDbJzOVhnNoQAV1nfqGAEjZoTES5cm6IzGKSQPNG8OuMXr2EdB2Sw8O0tLTgU6XEZzRQ0mD07BCp68OUFtNgWohoCM0XBl8IfJKgz8BoClFaSZIdLzI2eYP7Hn6IBdPDNoI0rGtF1ASZnVogvKtIvLORiuPgWhZr3zYohMM4lQpTp35H8vSbrNyYxRIqrfv20f/YE/zR3zxBxwf6cWoayLsFZs69heZW6Wqpo7iwwJnXfoRtWqRyq2SKHlIEqUpJNBwh3FQHQgGMW/+vYhdWmJ0ZpVLJ4q+v44HHvsDjr/0z+z/7CUrFIuff+B9ml9JIvwG2h+IP8IOXX+Lsr37Od1/+GuXiEsXVm3ieTa5gUvUDgQBGSzshJQS2C2H1NtBxbBQcOnq38uBTj9OxsZ1ffutHfP+Z44ycvoBXctAk4NPA0ql6Dqam4zhVrk5MAA5YPkClaEvMpTwhI86GrW1Y6QKqa+HTfbeuSUW4Cg2d69nQ/wGm3zrNvz93hOv//Rvc3ALllXnyi9fJFzKQzyPdMlahxInXTuA4KmfOnAURASOIoUI6XcCyXeo2tlEfDbJ4fRwZqyVQl7hdoVEbYd1d20leGuK33/4Oomhx1/pGursThMvLuCsjyIU5ZGaVolVE8TQ+fu8+PMdlbGwREQqDbiClyvL4JHbVonvHbqySzdzEKOFQPYlNd9+6kBU9EiF/M8nEyZPs3rmTn554mf949RW+c/Qox184SiSUoLQ4TXF+HG9pjli0hu13v49sNovnufgDPoLBEKaUFAoFZBn67ruHkz/9NRXbIdRcR2Jj2+0KpWOzPHyW5nUJfvCtY2xc34IRUKirC7Knr5eXjjyDHhA4+RnQXTZtaCcYgkyhgOuBqhuoqoNTzEKlyvaB/dwYm2Ti6hChRJytH/ogRjB4G1jJ5VhJJrl/715qajSkNBGijBAmqmMSDIRQAirh+jY+/5mD/PiVF/FbHqcuXsVybIgEwAWRL1HTGKO4nOZ/f/5LQkE/23bsoemOJmTpFg/FLBRQHYdzl4fJmz40qcM7/W5yfpm//spRdvf0cPzrR/jHZ/8WzQjywzfP8eI3v4H0+9ETrSAdqmaR1PgkV3/2Y3LzSfzVMmZmmZmJCXJl8xZQrauvH6wiWDFL3JyaxheN0xxrQFFdrs/Okc5U+OaRJ7mzvR7p+Tl54Qpf+rsnKZRsom1dGG2tSM+juDBP9spFyC/RlmgipHgkR0bIZLO01hoM/eIXtLS0IDb07ZbpvEmwKYbqeawmk+zY1sdPjv8rwi2hKj4s00YGFP7r3Nt8+e+Pks7miKzfQmTjRnx+P/mlKYoT12iMhnn00GEOvH8nmUKW5185wemhIe5sbuaNEyfYs2cPCj4Q8RD1W3tp6unBLhYZn5nClB5u2cUqVsHzWM6lef7Vf2NxaRGltQGjuxs9VA+Ojb6Uos4wePzwYf5k305qbGgP1PCNZ57ki3/+SWr0tWMCWNNwCIQSJdJ1JyIaRbgeQgiKsOYSav1R1nd2oEV0wkKgI8HLk5oYYTUzx599/GN8dO/7KZfWlI0QgnyuxKcOHOAvP/3pNcG1BhSAilNdpVr1oyoaQnhIz8PDxcbCxqLsWXzlc4e4e8du7FWTyug5vJEzKOkkO7ds4dCDH8SxyniKx0RqifH0HEIR5G2Pzoa620Bd14mEg2QXMuDmMGoipFZXOfmbs/h0a005UULKMv6Ay4tPf4kNvV0USwXmx8eI6zqPHHwYgY0nq2hagC+/8BKPffV5Xv/1G8RjOpZXRkqJpmmoXd0bBu9obyefTaNE1lG1TYrzc7x57k0efvATaNq7nQwkHn7N5ZMHPoIeDRNJ1LN71y4G7r+HimUiFI0jr3yfs6PX2L9rNxcuvc2Fi5eJRhP85+uv09HRgVpYXR3s27mDto527IqLL1xLeWmJbGqFQtHlw/vvwXWc21Apsd0yd7e18+H+Pnram6k4ZYQQLOWKfP3V7zHQ388Tj3yWP/3YAYq2y+BTT+F5Hl1dXahtnZ2DZ06dwsxmubO1kfaOLoSukVmc4+rIVUKhWvo2bcGtOGBzyz3HxTEdpOutxVTBxI0Fhq5c49kvfoH0wjLHjv0L3z7+KqVikc2bN2MYBuq9e/cOBiIRZqamGL1wHk06bOrdTktjgnQqxe9Ov0Wsbh2btnSC5SHstRaI+3vuQcgf5le/PU1XZxeZxVn+4tDnmLg2QltnJ52dnYTDYXRdRwwMDEjLtjGrVVZTKUamptCATT099PT1cX1snKnkTbZt6+GvHv08m+NhSjmbWyJFgIgIyhY8/fQ/cP78eVKpFO3t7XR3d2MYBlJKFEVBCIE4ePCgBHBdF9u2KVcdZueSzM7MoPl8bL/3PuqbmpmdnWZubo4H9j/AwT/eR0dDM7gKpiK5cuUizz33T4yNjVFfX09zayuJeBxd19E07db5A/wfbQ3iv8udJJEAAAAASUVORK5CYII="};
+const iconImgs={}; for(const [k,v] of Object.entries(ICONS)){iconImgs[k]=new Image();iconImgs[k].src=v;}
+const canvas=document.getElementById('game'), ctx=canvas.getContext('2d');
+const W=900,H=900,C={x:450,y:450},PLAYER_R=18;
+const playerInfo={T1:['support','#1d8cff'],H1:['support','#22c55e'],D1:['dps','#ef4444'],D2:['dps','#ef4444'],T2:['support','#1d8cff'],H2:['support','#22c55e'],R1:['dps','#ef4444'],R2:['dps','#ef4444']};
+const initialPlayers={T1:{x:234,y:293,facing:0},H1:{x:335,y:551,facing:0},D1:{x:198,y:600,facing:-2.118},D2:{x:264,y:604,facing:0},T2:{x:640,y:316,facing:Math.PI},H2:{x:654,y:532,facing:Math.PI},R1:{x:721,y:517,facing:Math.PI},R2:{x:617,y:546,facing:Math.PI}};
+const crystalAnchors={NW:{x:232,y:232},NE:{x:645,y:235},SE:{x:645,y:650},SW:{x:232,y:650}};
+const defaultObjects={
+ arena:{id:'arena',type:'circle',x:450,y:450,r:410,label:'Arena',color:'#526173',visible:true},
+ chaos:{id:'chaos',type:'boss',x:232,y:441,r:118,label:'Chaos / A',color:'#f97316',visible:true},
+ exdeath:{id:'exdeath',type:'boss',x:633.4,y:416.8,r:78,label:'Exdeath / B',color:'#38bdf8',visible:true},
+ wind:{id:'wind',type:'crystal',x:232,y:650,r:30,label:'Wind',color:'#22c55e',visible:false},
+ fire:{id:'fire',type:'crystal',x:232,y:232,r:30,label:'Fire',color:'#f97316',visible:false},
+ water:{id:'water',type:'crystal',x:645,y:650,r:30,label:'Water',color:'#8b5cf6',visible:false},
+ windAoe1:{id:'windAoe1',type:'aoe',x:0,y:0,r:126,label:'Wind stack 1',color:'rgba(34,197,94,.42)',visible:false},
+ windAoe2:{id:'windAoe2',type:'aoe',x:0,y:0,r:126,label:'Wind stack 2',color:'rgba(34,197,94,.42)',visible:false},
+ fireDonutL:{id:'fireDonutL',type:'donut',x:0,y:0,r:214,inner:72,label:'Fire donut 1',color:'rgba(249,115,22,.40)',visible:false},
+ fireDonutR:{id:'fireDonutR',type:'donut',x:0,y:0,r:210,inner:72,label:'Fire donut 2',color:'rgba(249,115,22,.40)',visible:false},
+ waterSpread1:{id:'waterSpread1',type:'aoe',x:0,y:0,r:214,label:'Water PBAoE 1',color:'rgba(139,92,246,.36)',visible:false},
+ waterSpread2:{id:'waterSpread2',type:'aoe',x:0,y:0,r:210,label:'Water PBAoE 2',color:'rgba(139,92,246,.36)',visible:false},
+ exdeathPBAoe:{id:'exdeathPBAoe',type:'aoe',x:633.4,y:416.8,r:210,label:'Lightning III / Exdeath PBAoE',color:'rgba(56,189,248,.22)',visible:false},
+ tankBuster1:{id:'tankBuster1',type:'aoe',x:0,y:0,r:62,label:'Thunder III TB 1',color:'rgba(248,113,113,.42)',visible:false},
+ tankBuster2:{id:'tankBuster2',type:'aoe',x:0,y:0,r:62,label:'Thunder III TB 2',color:'rgba(248,113,113,.42)',visible:false},
+ kefka:{id:'kefka',type:'clown',x:450,y:42,r:28,label:'Kefka / Trance',color:'#f472b6',visible:false},
+ latCone1:{id:'latCone1',type:'cone',x:232,y:441,r:540,angle:0,label:'Lat/Long cone 1',color:'rgba(250,204,21,.32)',visible:false},
+ latCone2:{id:'latCone2',type:'cone',x:232,y:441,r:540,angle:Math.PI,label:'Lat/Long cone 2',color:'rgba(250,204,21,.32)',visible:false}
+};
+const slotTemplates={
+ short_support:{id:'short_support',label:'short support',base:'short',face:'chaos',forward:50.2,side:-97.2,r:14,color:'#facc15',visible:true},
+ short_dps:{id:'short_dps',label:'short DPS',base:'short',face:'chaos',forward:51.5,side:144,r:14,color:'#facc15',visible:true},
+ long_support:{id:'long_support',label:'long support',base:'short',face:'long',forward:201,side:43.6,r:14,color:'#c084fc',visible:true},
+ long_dps:{id:'long_dps',label:'long DPS',base:'short',face:'long',forward:201,side:43.6,r:14,color:'#c084fc',visible:true},
+ wind_support_1:{id:'wind_support_1',label:'wind support 1',base:'wind',face:'chaos',forward:74.9,side:74.2,r:14,color:'#22c55e',visible:true},
+ wind_support_2:{id:'wind_support_2',label:'wind support 2',base:'wind',face:'chaos',forward:117.1,side:120.8,r:14,color:'#22c55e',visible:true},
+ wind_dps_1:{id:'wind_dps_1',label:'wind DPS 1',base:'wind',face:'chaos',forward:69.0,side:-73.4,r:14,color:'#22c55e',visible:true},
+ wind_dps_2:{id:'wind_dps_2',label:'wind DPS 2',base:'wind',face:'chaos',forward:98.4,side:-97.3,r:14,color:'#22c55e',visible:true}
+};
+let game, keys={}, mouse={x:0,y:0,right:false,dragging:false,dx:0,dy:0}, last=performance.now();
+function clone(o){return JSON.parse(JSON.stringify(o));} function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);} function randPick(a){return a[Math.floor(Math.random()*a.length)];} function normAng(a){while(a<=-Math.PI)a+=Math.PI*2;while(a>Math.PI)a-=Math.PI*2;return a;}
+function log(m){const d=document.createElement('div');d.textContent=m;document.getElementById('logBox').prepend(d);}
+function reset(){game={time:0,phase:'Pre-pull',running:false,paused:false,selected:null,objects:clone(defaultObjects),players:{},slots:clone(slotTemplates),layout:null,random:{shortElement:null,fireWaterSwap:null,latLong:null},debuffStartTime:6,aiMoved:false,kbDone:false,windShown:false,tankMoved:false,tb1Done:false,tb2Done:false,chaosCentered:false,exdeathMoved2:false,latCast:false,cone1Shown:false,cone2Shown:false,longAiMoved:false,longKbDone:false,longWindShown:false,cone1SafeMoved:false,cone2SafeMoved:false,aoeVisibleUntil:{},failed:false,failReason:'',failUntil:0};for(const [id,p] of Object.entries(initialPlayers))game.players[id]={id,x:p.x,y:p.y,facing:p.facing,hero:['T1','H1','D1','D2'].includes(id)?'A':'B',wind:null,fw:null,timer:null};document.getElementById('logBox').innerHTML='';log('Ready. Press Start.');updateSlots();updateUI();}
+function start(){reset();game.running=true;game.paused=false;log('Started.');updateUI();}
+function setTime(t){game.time=Number(t);if(game.time>=6){showCrystals(); if(!game.random.shortElement)assignDebuffs();} if(game.time>=10)moveBosses(); if(game.time>=24 && !game.aiMoved)autoMoveAI(); if(game.time>=26)showShortResolveAoes(); if(game.time>=27&&!game.kbDone)doCrystalKnockback(); if(game.time>=28&&!game.windShown)showWindAoes(); if(game.time>=32&&!game.tankMoved)moveT2ForTankbuster(); if(game.time>=33)showTankbuster(1); if(game.time>=35)showTankbuster(2); if(game.time>=36&&!game.chaosCentered)moveChaosCenterNorth(); if(game.time>=37&&!game.exdeathMoved2)moveExdeathBetweenWindLong(); if(game.time>=41&&!game.latCast)startLatLong(); if(game.time>=45.5&&!game.cone1SafeMoved)moveAIsForLatLongSafe(1); if(game.time>=46)showLatLongHit(1); if(game.time>=47.5&&!game.cone2SafeMoved)moveAIsForLatLongSafe(2); if(game.time>=48)showLatLongHit(2); if(game.time>=50&&!game.longAiMoved)autoMoveLongResolutionAI(); if(game.time>=51)showLongResolveAoes(); if(game.time>=52&&!game.longKbDone)doLongCrystalKnockback(); if(game.time>=53&&!game.longWindShown)showWindAoesSecond(); updatePhase();updateUI();}
+function layoutCrystals(){const layouts=[{wind:'NW',fire:'NE',water:'SW',empty:'SE'},{wind:'NW',fire:'SW',water:'NE',empty:'SE'},{wind:'NE',fire:'NW',water:'SE',empty:'SW'},{wind:'NE',fire:'SE',water:'NW',empty:'SW'},{wind:'SE',fire:'NE',water:'SW',empty:'NW'},{wind:'SE',fire:'SW',water:'NE',empty:'NW'},{wind:'SW',fire:'NW',water:'SE',empty:'NE'},{wind:'SW',fire:'SE',water:'NW',empty:'NE'}];return randPick(layouts);}
+function showCrystals(){if(!game.layout){game.layout=layoutCrystals();for(const c of ['wind','fire','water']){Object.assign(game.objects[c], crystalAnchors[game.layout[c]]);game.objects[c].visible=true;}log(`Crystals: Wind=${game.layout.wind}, Fire=${game.layout.fire}, Water=${game.layout.water}.`);}}
+function assignDebuffs(){const ids=Object.keys(game.players), sups=ids.filter(id=>playerInfo[id][0]==='support'), dps=ids.filter(id=>playerInfo[id][0]==='dps');const e=[randPick(sups),randPick(dps)], f=[randPick(sups.filter(x=>x!==e[0])),randPick(dps.filter(x=>x!==e[1]))];const short=Math.random()<.5?'fire':'water';game.random.shortElement=short;for(const id of ids){const p=game.players[id];p.wind=Math.random()<.5?'headwind':'tailwind';p.fw=null;p.timer=null;}for(const id of e){game.players[id].fw='entropy';game.players[id].timer=short==='fire'?20:45;}for(const id of f){game.players[id].fw='fluid';game.players[id].timer=short==='water'?20:45;}log(`Debuffs: short=${short}. Entropy=${e.join('+')} Fluid=${f.join('+')}.`);}
+function shortElement(){return game.random.shortElement||'fire';} function longElement(){return shortElement()==='fire'?'water':'fire';}
+function basis(base,face){const dx=face.x-base.x,dy=face.y-base.y,d=Math.hypot(dx,dy)||1;const ux=dx/d,uy=dy/d;return {ux,uy,rx:-uy,ry:ux};}
+function slotMode(){return game && game.time>=50 ? 'long' : 'short';}
+function objFromName(name){return name==='short'?game.objects[shortElement()]:name==='long'?game.objects[longElement()]:game.objects[name];}
+function slotRefs(s,mode=slotMode()){
+  // Wind positions are always built from the Wind crystal while FACING the active crystal.
+  // This makes side handling stable for every random layout:
+  //   positive side = right side while facing the crystal  -> supports
+  //   negative side = left side while facing the crystal   -> DPS
+  if(s.id && s.id.startsWith('wind_')){
+    const activeCrystal = (mode==='long') ? longElement() : shortElement();
+    return {base:game.objects.wind, face:game.objects[activeCrystal]};
+  }
+  // First resolution: short slots are based on the short crystal; long slots sit between short and long.
+  // Second/long resolution: reverse the active timer/crystal relationship.
+  //   long-debuff players use the short_* geometry, but based on the LONG crystal.
+  //   short-debuff players use the long_* geometry, sitting between LONG and SHORT.
+  if(mode==='long'){
+    if(s.id && s.id.startsWith('short_')) return {base:game.objects[longElement()], face:game.objects.chaos};
+    if(s.id && s.id.startsWith('long_')) return {base:game.objects[longElement()], face:game.objects[shortElement()]};
+  }
+  return {base:objFromName(s.base), face:objFromName(s.face)};
+}
+function slotWorld(s,mode=slotMode()){const refs=slotRefs(s,mode);const b=basis(refs.base,refs.face);return {x:refs.base.x+b.ux*s.forward+b.rx*s.side,y:refs.base.y+b.uy*s.forward+b.ry*s.side};}
+function updateSlots(mode=slotMode()){if(!game||!game.slots)return;for(const s of Object.values(game.slots)){const p=slotWorld(s,mode);s.x=p.x;s.y=p.y;}}
+function moveBosses(){showCrystals();const short=game.objects[shortElement()], wind=game.objects.wind, long=game.objects[longElement()];game.objects.chaos.x=(wind.x+short.x)/2;game.objects.chaos.y=(wind.y+short.y)/2;game.objects.exdeath.x=long.x;game.objects.exdeath.y=long.y;game.objects.exdeathPBAoe.x=game.objects.exdeath.x;game.objects.exdeathPBAoe.y=game.objects.exdeath.y;updateSlots();}
+function autoMoveAI(){showCrystals();moveBosses();updateSlots();const controlled=document.getElementById('controlledSelect').value;const shortP=Object.values(game.players).filter(p=>(p.fw==='entropy'&&shortElement()==='fire')||(p.fw==='fluid'&&shortElement()==='water'));const longP=Object.values(game.players).filter(p=>p.fw&& !shortP.includes(p));const windP=Object.values(game.players).filter(p=>!p.fw);function move(id,slot){if(!id||id===controlled)return;const p=game.players[id],s=game.slots[slot];p.x=s.x;p.y=s.y;p.facing=Math.atan2(game.objects.chaos.y-p.y,game.objects.chaos.x-p.x);clampPlayer(p);}
+move((shortP.find(p=>playerInfo[p.id][0]==='support')||{}).id,'short_support'); move((shortP.find(p=>playerInfo[p.id][0]==='dps')||{}).id,'short_dps');
+move((longP.find(p=>playerInfo[p.id][0]==='support')||{}).id,'long_support'); move((longP.find(p=>playerInfo[p.id][0]==='dps')||{}).id,'long_dps');
+const sups=windP.filter(p=>playerInfo[p.id][0]==='support').sort((a,b)=>['H1','H2','T1','T2'].indexOf(a.id)-['H1','H2','T1','T2'].indexOf(b.id));
+const dps=windP.filter(p=>playerInfo[p.id][0]==='dps').sort((a,b)=>['R1','R2','D1','D2'].indexOf(a.id)-['R1','R2','D1','D2'].indexOf(b.id));
+// Original wind side: supports use support slots, DPS use DPS slots.
+move(sups[0]?.id,'wind_support_1');move(sups[1]?.id,'wind_support_2');move(dps[0]?.id,'wind_dps_1');move(dps[1]?.id,'wind_dps_2');
+updateResolveAoePositions();game.aiMoved=true;log('AI moved at 24s.');}
+function closestToCrystal(crystalId, candidates, n=2){const c=game.objects[crystalId];return candidates.slice().sort((a,b)=>dist(a,c)-dist(b,c)).slice(0,n);}
+function activeResolveElement(){
+  // Before 50s, the active source is the short element. From the long-resolution
+  // phase onward, the active source is the long element. This keeps the visible
+  // fire/water AoEs attached to the correct bait players while calibrating.
+  return (game && game.time >= 50) ? longElement() : shortElement();
+}
+function updateResolveAoePositions(){
+  if(!game || !game.objects) return;
+
+  // Wind stacks always follow the two closest no-Fire/Water players to the Wind crystal.
+  const windTargets=closestToCrystal('wind',Object.values(game.players).filter(p=>!p.fw),2);
+  ['windAoe1','windAoe2'].forEach((id,i)=>{const t=windTargets[i];if(t){game.objects[id].x=t.x;game.objects[id].y=t.y;}});
+
+  // Fire/Water AoEs follow the actual expiring debuff players only.
+  // Short resolve: AoEs pop on 20s debuff players, closest to the SHORT crystal.
+  // Long resolve: AoEs pop on 45s debuff players, closest to the LONG crystal.
+  const elem=activeResolveElement();
+  const expiringTimer = (game && game.time >= 50) ? 45 : 20;
+  const expiringPlayers = Object.values(game.players).filter(p => p.fw && p.timer === expiringTimer);
+  const targets=closestToCrystal(elem, expiringPlayers, 2);
+  const ids=elem==='fire'?['fireDonutL','fireDonutR']:['waterSpread1','waterSpread2'];
+  ids.forEach((id,i)=>{const t=targets[i];if(t){game.objects[id].x=t.x;game.objects[id].y=t.y;}});
+
+  // Keep the inactive element hidden unless manually shown by failure logic.
+  const inactiveIds=elem==='fire'?['waterSpread1','waterSpread2']:['fireDonutL','fireDonutR'];
+  if(!game.failed){inactiveIds.forEach(id=>{if(game.objects[id]) game.objects[id].visible=false;});}
+
+  if(game.objects.exdeathPBAoe){game.objects.exdeathPBAoe.x=game.objects.exdeath.x;game.objects.exdeathPBAoe.y=game.objects.exdeath.y;}
+}
+
+
+function showAoesFor(ids,dur=3.5){
+  // Review resolve AoEs briefly so overlaps can be checked, then fade them out.
+  // Cones keep their own shorter timing in showLatLongHit().
+  for(const id of ids){
+    if(game.objects[id]){
+      game.objects[id].visible=true;
+      game.aoeVisibleUntil[id]=game.time+dur;
+    }
+  }
+}
+function showAoesUntil(ids, untilTime){
+  // Keep grouped resolve AoEs visible until the same absolute timeline point.
+  // Used so short element + Lightning III + wind stacks all fade together.
+  for(const id of ids){
+    if(game.objects[id]){
+      game.objects[id].visible=true;
+      game.aoeVisibleUntil[id]=untilTime;
+    }
+  }
+}
+function keepAoesForFailure(ids){
+  // On failure, keep the relevant AoEs visible for 5 seconds to review why it failed.
+  for(const id of ids){ if(game.objects[id]){ game.objects[id].visible=true; game.aoeVisibleUntil[id]=game.time+5; } }
+}
+function hitsInCircle(circle){return Object.values(game.players).filter(p=>dist(p,circle)<=circle.r);}
+function hitsInDonut(donut){return Object.values(game.players).filter(p=>{const d=dist(p,donut);return d<=donut.r && d>=donut.inner;});}
+function currentResolveAoeIds(kind='short'){
+  const elem = kind==='short' ? shortElement() : longElement();
+  const ids = elem==='fire' ? ['fireDonutL','fireDonutR'] : ['waterSpread1','waterSpread2'];
+  return ids;
+}
+function validateOverlap(ids,label){
+  const hits={};
+  for(const id of ids){
+    const o=game.objects[id]; if(!o) continue;
+    const arr=o.type==='donut'?hitsInDonut(o):hitsInCircle(o);
+    for(const p of arr){ if(!hits[p.id])hits[p.id]=[]; hits[p.id].push(id); }
+  }
+  const bad=Object.entries(hits).filter(([id,arr])=>arr.length>1);
+  if(bad.length){ failMechanic(`${label}: ${bad.map(([id,arr])=>id+' hit by '+arr.join('+')).join('; ')}`, ids); return false; }
+  return true;
+}
+function validateWindStacks(ids){
+  let ok=true, reasons=[];
+  for(const id of ids){
+    const o=game.objects[id]; if(!o) continue;
+    const arr=hitsInCircle(o);
+    if(arr.length<2){ok=false; reasons.push(`${id} had ${arr.length}/2 players`);}
+  }
+  if(!ok){failMechanic('Wind stack failed: '+reasons.join('; '), ids); return false;}
+  return true;
+}
+function failMechanic(reason, ids){
+  if(game.failed) return;
+  game.failed=true; game.failReason=reason; game.failUntil=game.time+5; keepAoesForFailure(ids);
+  document.getElementById('statusBox').className='small warn';
+  document.getElementById('statusBox').textContent='FAIL: '+reason;
+  log('FAIL: '+reason);
+}
+
+function hideResolveAoes(){for(const id of ['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','exdeathPBAoe','tankBuster1','tankBuster2','latCone1','latCone2']) if(game.objects[id]) game.objects[id].visible=false;}
+function showShortResolveAoes(){
+  showCrystals();
+  for(const id of ['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','exdeathPBAoe','tankBuster1','tankBuster2','latCone1','latCone2']) game.objects[id].visible=false;
+  const short=shortElement();
+  const ids=short==='fire'?['fireDonutL','fireDonutR']:['waterSpread1','waterSpread2'];
+  updateResolveAoePositions();
+  // Short debuff AoEs and Exdeath Lightning III stay visible through wind resolve,
+  // then all fade together about 1s after Wind stacks.
+  showAoesUntil([...ids,'exdeathPBAoe'],29.0);
+  validateOverlap([...ids,'exdeathPBAoe'],'Short debuff + Lightning III resolve');
+}
+function showWindAoes(){
+  showCrystals();
+  const ids=['windAoe1','windAoe2'];
+  updateResolveAoePositions();
+  // Fade together with short debuff AoEs and Lightning III.
+  showAoesUntil(ids,29.0);
+  validateWindStacks(ids);
+  game.windShown=true;
+}
+
+function autoMoveLongResolutionAI(){
+  showCrystals();
+  moveChaosCenterNorth();
+  moveExdeathBetweenWindLong();
+  updateSlots('long');
+  const controlled=document.getElementById('controlledSelect').value;
+  const longP=Object.values(game.players).filter(p=>p.fw && p.timer===45);
+  const shortP=Object.values(game.players).filter(p=>p.fw && p.timer===20);
+  const windP=Object.values(game.players).filter(p=>!p.fw);
+  function move(id,slot){if(!id||id===controlled)return;const p=game.players[id],s=game.slots[slot];p.x=s.x;p.y=s.y;p.facing=Math.atan2(game.objects.chaos.y-p.y,game.objects.chaos.x-p.x);clampPlayer(p);}
+  // Reversed timer/crystal logic for second resolution:
+  // long debuffs are now the sources near the long crystal; short debuffs are the players getting hit between crystals.
+  move((longP.find(p=>playerInfo[p.id][0]==='support')||{}).id,'short_support');
+  move((longP.find(p=>playerInfo[p.id][0]==='dps')||{}).id,'short_dps');
+  move((shortP.find(p=>playerInfo[p.id][0]==='support')||{}).id,'long_support');
+  move((shortP.find(p=>playerInfo[p.id][0]==='dps')||{}).id,'long_dps');
+  const sups=windP.filter(p=>playerInfo[p.id][0]==='support').sort((a,b)=>['H1','H2','T1','T2'].indexOf(a.id)-['H1','H2','T1','T2'].indexOf(b.id));
+  const dps=windP.filter(p=>playerInfo[p.id][0]==='dps').sort((a,b)=>['R1','R2','D1','D2'].indexOf(a.id)-['R1','R2','D1','D2'].indexOf(b.id));
+  // Original wind side: supports use support slots, DPS use DPS slots.
+  move(sups[0]?.id,'wind_support_1');move(sups[1]?.id,'wind_support_2');move(dps[0]?.id,'wind_dps_1');move(dps[1]?.id,'wind_dps_2');
+  updateResolveAoePositions();
+  game.longAiMoved=true;
+  log('AI moved for long resolution: long players use active-source slots, short players use between-crystal slots.');
+}
+function showLongResolveAoes(){
+  showCrystals();
+  for(const id of ['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','tankBuster1','tankBuster2','latCone1','latCone2']) game.objects[id].visible=false;
+  updateResolveAoePositions();
+  const elem=longElement();
+  const ids=elem==='fire'?['fireDonutL','fireDonutR']:['waterSpread1','waterSpread2'];
+  // Long debuff AoEs stay visible through second wind stacks, then fade together.
+  showAoesUntil(ids,54.0);
+  validateOverlap(ids,'Long debuff resolve');
+}
+function doLongCrystalKnockback(){
+  const elem=longElement(), obj=game.objects[elem];
+  // At long resolution, the short-timer players are the ones intentionally hit by the long crystal AoEs.
+  const targets=closestToCrystal(elem,Object.values(game.players).filter(p=>p.fw && p.timer===20),2);
+  for(const p of targets){const dx=p.x-obj.x,dy=p.y-obj.y,d=Math.hypot(dx,dy)||1;p.x+=dx/d*155;p.y+=dy/d*155;clampPlayer(p);}
+  game.longKbDone=true; updateResolveAoePositions(); log('Long crystal knockback.');
+}
+function showWindAoesSecond(){
+  const ids=['windAoe1','windAoe2']; updateResolveAoePositions(); showAoesUntil(ids,54.0); validateWindStacks(ids); game.longWindShown=true; log('Second wind stacks resolve.');
+}
+
+function crystalTargetsForShort(){
+  const short=shortElement();
+  // Short-debuff players are the AoE sources and should NOT be knocked after their own AoE resolves.
+  // The long-debuff players intentionally get hit by the short crystal AoE and get knocked away.
+  return closestToCrystal(short,Object.values(game.players).filter(p=>p.fw && p.timer===45),2);
+}
+function doCrystalKnockback(){
+  const targets=crystalTargetsForShort();
+  const shortObj=game.objects[shortElement()];
+  for(const p of targets){
+    const dx=p.x-shortObj.x, dy=p.y-shortObj.y, d=Math.hypot(dx,dy)||1;
+    p.x += dx/d*155; p.y += dy/d*155; clampPlayer(p);
+    const needed=p.wind;
+    const faceToSource=Math.atan2(shortObj.y-p.y, shortObj.x-p.x);
+    const diff=Math.abs(normAng(p.facing-faceToSource));
+    const ok=(needed==='tailwind' && diff<Math.PI/2) || (needed==='headwind' && diff>Math.PI/2);
+    log(`${p.id} KB from ${shortElement()} crystal: ${ok?'facing OK':'CHECK FACING'}.`);
+  }
+  game.kbDone=true; updateResolveAoePositions();
+}
+function moveT2ForTankbuster(){
+  const controlled=document.getElementById('controlledSelect').value;
+  const p=game.players.T2, e=game.objects.exdeath;
+  if(controlled!=='T2'&&p){p.x=e.x-70;p.y=e.y+10;p.facing=Math.atan2(e.y-p.y,e.x-p.x);clampPlayer(p);log('AI moved T2 closer for Thunder III tankbuster.');}
+  game.tankMoved=true;
+}
+function closestToExdeath(){const e=game.objects.exdeath;return Object.values(game.players).slice().sort((a,b)=>dist(a,e)-dist(b,e))[0];}
+function showTankbuster(n){
+  const p=closestToExdeath(); if(!p)return;
+  const id=n===1?'tankBuster1':'tankBuster2';
+  game.objects[id].x=p.x;game.objects[id].y=p.y;game.objects[id].visible=true;
+  const isTank=(p.id==='T1'||p.id==='T2');
+  if(n===1&&!game.tb1Done){log(`Thunder III tankbuster 1 on ${p.id}: ${isTank?'OK tank':'FAIL/check: not tank'}.`);game.tb1Done=true;}
+  if(n===2&&!game.tb2Done){log(`Thunder III tankbuster 2 on ${p.id}: ${isTank?'OK tank':'FAIL/check: not tank'}.`);game.tb2Done=true;}
+}
+function moveChaosCenterNorth(){
+  const c=game.objects.chaos;c.x=450;c.y=450;c.facing=-Math.PI/2;game.chaosCentered=true;log('Chaos moved center and faces north.');
+}
+function moveExdeathBetweenWindLong(){
+  const w=game.objects.wind, l=game.objects[longElement()], e=game.objects.exdeath;
+  e.x=(w.x+l.x)/2; e.y=(w.y+l.y)/2; game.objects.exdeathPBAoe.x=e.x;game.objects.exdeathPBAoe.y=e.y;game.exdeathMoved2=true;log('Exdeath moved between Wind and long crystal.');
+}
+function startLatLong(){
+  game.random.latLong=Math.random()<0.5?'Latitude':'Longitude';
+  game.objects.kefka.visible=true;
+  game.latCast=true;
+  log(`Chaos starts ${game.random.latLong} Impulse. Kefka starts Trance. REMEMBER KEFKA.`);
+}
+function coneAnglesFor(hit){
+  const front=-Math.PI/2, back=Math.PI/2, left=Math.PI, right=0;
+  const latFirst=[left,right], latSecond=[front,back];
+  const lonFirst=[front,back], lonSecond=[left,right];
+  const isLat=game.random.latLong==='Latitude';
+  return hit===1 ? (isLat?latFirst:lonFirst) : (isLat?latSecond:lonSecond);
+}
+function moveAIsForLatLongSafe(hit){
+  if(!game.latCast)startLatLong();
+  const controlled=document.getElementById('controlledSelect').value;
+  const c=game.objects.chaos;
+  const angles=coneAnglesFor(hit);
+  const frontBack = angles.some(a=>Math.abs(normAng(a-(-Math.PI/2)))<0.01) || angles.some(a=>Math.abs(normAng(a-(Math.PI/2)))<0.01);
+  const ids=Object.keys(game.players).filter(id=>id!==controlled);
+  ids.forEach((id,i)=>{
+    const p=game.players[id];
+    let x,y;
+    if(frontBack){
+      // Front/back cones: sides are safe. Split AI to both sides near Chaos center.
+      const side = i%2===0 ? -1 : 1;
+      const row = Math.floor(i/2) - 1.5;
+      x = c.x + side*72;
+      y = c.y + row*18;
+    }else{
+      // Side cones: go behind Chaos because Chaos is facing north.
+      x = c.x + (i-3)*18;
+      y = c.y + 78;
+    }
+    p.x=x;p.y=y;p.facing=-Math.PI/2;clampPlayer(p);
+  });
+  if(hit===1)game.cone1SafeMoved=true; else game.cone2SafeMoved=true;
+  log(`AI moved to safe spots for ${game.random.latLong} hit ${hit}.`);
+}
+
+function showLatLongHit(hit){
+  if(!game.latCast)startLatLong();
+  const c=game.objects.chaos, angles=coneAnglesFor(hit), len=Number(document.getElementById('coneLen').value);
+  ['latCone1','latCone2'].forEach((id,i)=>{
+    const o=game.objects[id];
+    o.x=c.x;o.y=c.y;o.r=len;o.angle=angles[i];o.visible=true;o.label=`${game.random.latLong} hit ${hit}`;
+    game.aoeVisibleUntil[id]=game.time+1; // cones fade quickly
+  });
+  if(hit===1&&!game.cone1Shown){log(`${game.random.latLong} first cones.`);game.cone1Shown=true;}
+  if(hit===2&&!game.cone2Shown){log(`${game.random.latLong} second cones.`);game.cone2Shown=true;}
+}
+function updatePhase(){let p='Pre-pull';if(game.time>0&&game.time<2)p='Bosses moving center';else if(game.time<5.5&&game.time>=2)p='Bowels of Agony cast';else if(game.time>=5.5&&game.time<10)p='Debuffs / read';else if(game.time>=10&&game.time<20)p='Boss movement';else if(game.time>=20&&game.time<24)p='Lightning III cast';else if(game.time>=24&&game.time<26)p='AI moving';else if(game.time>=26&&game.time<27)p='Short debuffs + Lightning III';else if(game.time>=27&&game.time<28)p='Crystal knockback';else if(game.time>=28&&game.time<29)p='Wind stacks';else if(game.time>=29&&game.time<36)p='Thunder III tankbusters';else if(game.time>=36&&game.time<41)p='Reposition for Lat/Long';else if(game.time>=41&&game.time<46)p='Lat/Long + Trance cast';else if(game.time>=46&&game.time<48)p='Lat/Long first cones';else if(game.time>=48&&game.time<50)p='Lat/Long second cones';else if(game.time>=50&&game.time<51)p='Long AI movement';else if(game.time>=51&&game.time<52)p='Long debuffs resolve';else if(game.time>=52&&game.time<53)p='Long crystal knockback';else if(game.time>=53)p='Second Wind stacks';game.phase=p;}
+function update(dt){if(!game)return;handleMovement(dt);if(!game.running||game.paused)return;const old=game.time;game.time+=dt;if(old<2&&game.time>=2)log('Bosses reached center.');if(old<5.5&&game.time>=5.5)log('Bowels of Agony complete.');if(old<6&&game.time>=6){showCrystals();assignDebuffs();}if(old<10&&game.time>=10){moveBosses();log('Bosses moved for first resolution.');}if(old<20&&game.time>=20)log('Exdeath starts Lightning III.');if(old<24&&game.time>=24)autoMoveAI();if(old<26&&game.time>=26){showShortResolveAoes();log('Short debuffs and Lightning III resolve.');}if(old<27&&game.time>=27)doCrystalKnockback();if(old<28&&game.time>=28){showWindAoes();log('Wind stacks resolve.');}if(old<29&&game.time>=29)log('Exdeath starts Thunder III tankbuster cast.');if(old<32&&game.time>=32)moveT2ForTankbuster();if(old<33&&game.time>=33)showTankbuster(1);if(old<35&&game.time>=35)showTankbuster(2);if(old<36&&game.time>=36)moveChaosCenterNorth();if(old<37&&game.time>=37)moveExdeathBetweenWindLong();if(old<41&&game.time>=41)startLatLong();if(old<45.5&&game.time>=45.5)moveAIsForLatLongSafe(1);if(old<46&&game.time>=46){showLatLongHit(1);}if(old<47.5&&game.time>=47.5)moveAIsForLatLongSafe(2);if(old<48&&game.time>=48){showLatLongHit(2);}if(old<50&&game.time>=50)autoMoveLongResolutionAI();if(old<51&&game.time>=51){showLongResolveAoes();log('Long debuffs resolve.');}if(old<52&&game.time>=52)doLongCrystalKnockback();if(old<53&&game.time>=53){showWindAoesSecond();}updatePhase();updateUI();}
+function handleMovement(dt){const id=document.getElementById('controlledSelect').value;if(id==='Spectator')return;const p=game?.players[id];if(!p)return;const speed=(keys.Shift?85:190)*dt;let dx=0,dy=0;if(keys.w||keys.W)dy-=speed;if(keys.s||keys.S)dy+=speed;if(keys.a||keys.A)dx-=speed;if(keys.d||keys.D)dx+=speed;p.x+=dx;p.y+=dy;if(keys.q||keys.Q)p.facing-=2.7*dt;if(keys.e||keys.E)p.facing+=2.7*dt;if(mouse.right)p.facing=Math.atan2(mouse.y-p.y,mouse.x-p.x);clampPlayer(p);}
+function clampPlayer(p){const o=game.objects.arena,dx=p.x-o.x,dy=p.y-o.y,d=Math.hypot(dx,dy),m=o.r-PLAYER_R-3;if(d>m){p.x=o.x+dx/d*m;p.y=o.y+dy/d*m;}}
+function draw(){ctx.clearRect(0,0,W,H);drawArena();if(document.getElementById('showAOE').checked)drawAoes();drawObjects();drawCastBar();if(document.getElementById('showSlots').checked)drawSlots();drawPlayers();}
+function drawArena(){const o=game.objects.arena;ctx.fillStyle='rgba(20,35,55,.40)';ctx.strokeStyle=o.color;ctx.lineWidth=4;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();ctx.stroke();}
+
+function drawAoes(){
+  if(game&&game.failed&&game.time>game.failUntil){game.failed=false;document.getElementById('statusBox').className='small ok';document.getElementById('statusBox').textContent='Ready.';}
+  if(game&&game.objects)updateResolveAoePositions();
+  for(const id of ['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','exdeathPBAoe','tankBuster1','tankBuster2','latCone1','latCone2']){
+    const o=game.objects[id];if(!o||!o.visible)continue;if(game.aoeVisibleUntil&&game.aoeVisibleUntil[id]!==undefined&&game.time>game.aoeVisibleUntil[id]){o.visible=false;delete game.aoeVisibleUntil[id];continue;}ctx.save();ctx.fillStyle=o.color;ctx.strokeStyle=o.color.replace(/\.\d+\)/,'.9)');ctx.lineWidth=3;
+    if(o.type==='donut'){
+      ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.arc(o.x,o.y,o.inner,0,Math.PI*2,true);ctx.fill('evenodd');ctx.stroke();ctx.beginPath();ctx.arc(o.x,o.y,o.inner,0,Math.PI*2);ctx.stroke();
+    }else if(o.type==='cone'){
+      const half=Number(document.getElementById('coneHalf').value)*Math.PI/180;
+      ctx.beginPath();ctx.moveTo(o.x,o.y);ctx.lineTo(o.x+Math.cos(o.angle-half)*o.r,o.y+Math.sin(o.angle-half)*o.r);ctx.lineTo(o.x+Math.cos(o.angle+half)*o.r,o.y+Math.sin(o.angle+half)*o.r);ctx.closePath();ctx.fill();ctx.stroke();
+    }else{
+      ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();ctx.stroke();
+    }
+    drawLabel(o);ctx.restore();
+  }
+}
+function crystalPath(o){
+  ctx.beginPath();
+  if(o.id==='fire'){
+    for(let i=0;i<3;i++){const a=-Math.PI/2+i*Math.PI*2/3;const x=o.x+Math.cos(a)*o.r*1.25,y=o.y+Math.sin(a)*o.r*1.25;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.closePath();
+  }else if(o.id==='wind'){
+    ctx.moveTo(o.x,o.y-o.r*1.25);ctx.lineTo(o.x+o.r*1.25,o.y);ctx.lineTo(o.x,o.y+o.r*1.25);ctx.lineTo(o.x-o.r*1.25,o.y);ctx.closePath();
+  }else{
+    ctx.rect(o.x-o.r,o.y-o.r,o.r*2,o.r*2);
+  }
+}
+function drawObjects(){for(const id of ['chaos','exdeath','wind','fire','water','kefka']){const o=game.objects[id];if(!o||!o.visible)continue;ctx.save();if(o.type==='boss'){ctx.fillStyle=o.color+'44';ctx.strokeStyle=o.color;ctx.lineWidth=4;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#0b0f16';ctx.beginPath();ctx.arc(o.x,o.y,28,0,Math.PI*2);ctx.fill();}else if(o.type==='clown'){ctx.fillStyle=o.color;ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🤡',o.x,o.y+1);}else{ctx.fillStyle=o.color;ctx.strokeStyle='#fff';ctx.lineWidth=2;crystalPath(o);ctx.fill();ctx.stroke();}drawLabel(o);if(game.selected===id)drawSelection(o);ctx.restore();}}
+
+function drawCastBar(){let label='',prog=0,rem=0,b=null,color='#facc15';
+ if(game.time>=2&&game.time<5.5){label='Bowels of Agony';prog=(game.time-2)/3.5;rem=5.5-game.time;b=game.objects.chaos;color='#facc15';}
+ else if(game.time>=20&&game.time<26){label='Lightning III';prog=(game.time-20)/6;rem=26-game.time;b=game.objects.exdeath;color='#38bdf8';}
+ else if(game.time>=29&&game.time<35){label='Thunder III';prog=(game.time-29)/6;rem=35-game.time;b=game.objects.exdeath;color='#ef4444';}
+ else if(game.time>=41&&game.time<46){label=(game.random.latLong||'Lat/Long')+' Impulse';prog=(game.time-41)/5;rem=46-game.time;b=game.objects.chaos;color='#facc15';}
+ if(label&&b)drawOneCastBar(label,prog,rem,b,color);
+ if(game.time>=41&&game.time<46&&game.objects.kefka.visible)drawOneCastBar('Trance',(game.time-41)/5,46-game.time,game.objects.kefka,'#f472b6');
+}
+function drawOneCastBar(label,prog,rem,b,color){const w=250,h=18,x=b.x-w/2,y=b.y-b.r-52;ctx.fillStyle='rgba(5,10,18,.88)';ctx.strokeStyle=color;ctx.lineWidth=2;ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);ctx.fillStyle=color.replace(')',',.65)').replace('rgb','rgba');ctx.fillRect(x+2,y+2,(w-4)*Math.max(0,Math.min(1,prog)),h-4);ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(label,b.x,y-4);ctx.fillText(rem.toFixed(1)+'s',b.x,y+13);}
+function slotsVisibleNow(){return game && game.time>=24;}
+function drawSlots(){if(!slotsVisibleNow())return;for(const s of Object.values(game.slots)){if(!s.visible)continue;ctx.save();ctx.strokeStyle=s.color;ctx.fillStyle='rgba(250,204,21,.12)';ctx.setLineDash([4,4]);ctx.lineWidth=2;ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.setLineDash([]);drawLabel(s);if(game.selected===s.id)drawSelection(s);ctx.restore();}}
+function drawLabel(o){if(!document.getElementById('showLabels').checked)return;ctx.save();ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor='#000';ctx.shadowBlur=3;ctx.fillText(o.label,o.x,o.y-(o.r||20)-12);ctx.restore();}
+function drawSelection(o){ctx.save();ctx.strokeStyle='#facc15';ctx.setLineDash([6,4]);ctx.lineWidth=3;ctx.beginPath();ctx.arc(o.x,o.y,(o.r||20)+8,0,Math.PI*2);ctx.stroke();ctx.restore();}
+function drawPlayers(){const sz=Number(document.getElementById('iconSize').value);for(const p of Object.values(game.players)){const color=playerInfo[p.id][1];ctx.save();ctx.fillStyle=color;ctx.strokeStyle=game.selected===p.id?'#facc15':'#111827';ctx.lineWidth=game.selected===p.id?4:2;ctx.beginPath();ctx.arc(p.x,p.y,PLAYER_R,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.translate(p.x,p.y);ctx.rotate(p.facing);ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(PLAYER_R+10,0);ctx.lineTo(PLAYER_R-3,-8);ctx.lineTo(PLAYER_R-3,8);ctx.closePath();ctx.fill();ctx.restore();ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(p.id,p.x,p.y+1);drawDebuffs(p,sz);}}
+function debuffRemaining(p){if(!p.timer)return null;const elapsed=Math.max(0,game.time-game.debuffStartTime);return Math.max(0,Math.ceil(p.timer-elapsed));}
+function drawDebuffs(p,sz){let icons=[];if(p.wind)icons.push([p.wind,null]);if(p.fw==='entropy')icons.push(['entropy',debuffRemaining(p)]);if(p.fw==='fluid')icons.push(['fluid',debuffRemaining(p)]);if(!icons.length)return;const y=p.y-PLAYER_R-24,total=icons.length*sz+(icons.length-1)*3,start=p.x-total/2+sz/2;ctx.save();ctx.font='bold 11px Arial';ctx.textAlign='center';ctx.textBaseline='middle';icons.forEach(([k,t],i)=>{const x=start+i*(sz+3),img=iconImgs[k];if(img.complete&&img.naturalWidth)ctx.drawImage(img,x-sz/2,y-sz/2,sz,sz);else{ctx.fillStyle='#333';ctx.fillRect(x-sz/2,y-sz/2,sz,sz);}if(t!==null){ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.strokeText(String(t),x+sz*.62,y+sz*.35);ctx.fillStyle='#fff';ctx.fillText(String(t),x+sz*.62,y+sz*.35);}});ctx.fillStyle=p.hero==='A'?'#f97316':'#38bdf8';ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.strokeText(p.hero,p.x,y-sz*.75);ctx.fillText(p.hero,p.x,y-sz*.75);ctx.restore();}
+function getMouse(e){const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};}
+function hit(pos){let best=null,bd=1e9;if(document.getElementById('calibMode').checked){for(const o of Object.values(game.objects)){if(o.id==='arena'||!o.visible||['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','exdeathPBAoe','tankBuster1','tankBuster2','latCone1','latCone2'].includes(o.id))continue;const d=dist(pos,o),r=(o.r||30)+16;if(d<r&&d<bd){best=o.id;bd=d;}}if(slotsVisibleNow())for(const s of Object.values(game.slots)){const d=dist(pos,s);if(d<s.r+18&&d<bd){best=s.id;bd=d;}}}for(const p of Object.values(game.players)){const d=dist(pos,p);if(d<PLAYER_R+12&&d<bd){best=p.id;bd=d;}}return best;}
+function selectedObj(){return game.objects[game.selected]||game.slots[game.selected]||game.players[game.selected]||null;}
+canvas.addEventListener('mousedown',e=>{const p=getMouse(e);mouse.x=p.x;mouse.y=p.y;if(e.button===2){mouse.right=true;return;}const h=hit(p);if(h && game.players[h]){document.getElementById('controlledSelect').value=h;game.selected=h;}updateUI();});
+canvas.addEventListener('mousemove',e=>{const p=getMouse(e);mouse.x=p.x;mouse.y=p.y;});
+window.addEventListener('mouseup',()=>{mouse.dragging=false;mouse.right=false;});canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('wheel',e=>{const o=game.objects[game.selected]||game.slots[game.selected];if(!o)return;e.preventDefault();const d=e.deltaY<0?4:-4;if(o.type==='donut'&&e.shiftKey)o.inner=Math.max(5,o.inner+d);else o.r=Math.max(5,(o.r||20)+d);updateUI();});
+function updateSlotTemplateFromDrag(s){const refs=slotRefs(s,slotMode());const b=basis(refs.base,refs.face);const vx=s.x-refs.base.x,vy=s.y-refs.base.y;s.forward=Number((vx*b.ux+vy*b.uy).toFixed(1));s.side=Number((vx*b.rx+vy*b.ry).toFixed(1));}
+window.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' '){e.preventDefault();if(game.time<=0)start();else togglePause();}});window.addEventListener('keyup',e=>{keys[e.key]=false;});
+function togglePause(){game.paused=!game.paused;game.running=!game.paused;updateUI();}
+function updateUI(){document.getElementById('phaseLabel').textContent=game.phase;document.getElementById('timerLabel').textContent=game.time.toFixed(1)+'s';document.getElementById('selectedLabel').textContent=game.selected||'None';document.getElementById('pauseBtn').textContent=game.paused?'▶ Resume':'⏸ Pause';const o=selectedObj();document.getElementById('objName').textContent=o?o.label||o.id:'None';document.getElementById('objX').value=o?Math.round(o.x):'';document.getElementById('objY').value=o?Math.round(o.y):'';document.getElementById('objR').value=o&&o.r?Math.round(o.r):'';document.getElementById('objH').value=o&&o.inner?Math.round(o.inner):'';updateDebuffTable();exportJson();}
+function updateDebuffTable(){const tb=document.getElementById('debuffTable');tb.innerHTML='';for(const p of Object.values(game.players)){const tr=document.createElement('tr');tr.innerHTML=`<td>${p.id}</td><td>${p.hero||''}</td><td>${p.wind?p.wind.replace('wind',''):''}</td><td>${p.fw?`${p.fw} ${debuffRemaining(p)}`:''}</td>`;tb.appendChild(tr);}}
+function exportJson(){const out={version:'p3_bowels_timeline_calibrator_v25_auto_cones_jump_keep_positions',time:Number(game.time.toFixed(1)),phase:game.phase,objects:game.objects,players:Object.fromEntries(Object.entries(game.players).map(([id,p])=>[id,{x:Math.round(p.x),y:Math.round(p.y),facing:Number(p.facing.toFixed(3))}])),slots:Object.fromEntries(Object.entries(game.slots).map(([id,s])=>[id,{x:Number(s.x.toFixed(1)),y:Number(s.y.toFixed(1)),base:s.base,face:s.face,forward:s.forward,side:s.side}])),random:game.random,layout:game.layout,iconSize:Number(document.getElementById('iconSize').value)};document.getElementById('jsonOut').value=JSON.stringify(out,null,2);}
+document.getElementById('startBtn').onclick=start;document.getElementById('pauseBtn').onclick=()=>{if(game.time<=0)start();else togglePause();};document.getElementById('resetBtn').onclick=reset;document.getElementById('exportBtn').onclick=()=>{exportJson();log('Exported.');};function jumpToPhase(){
+  const t=Number(document.getElementById('jumpPhase').value);
+
+  // IMPORTANT: Jumping phases should not replay the full timeline or reposition everyone.
+  // It only changes the clock/visual phase and preserves the current player positions.
+  game.time=t;
+
+  if(t>=6){
+    showCrystals();
+    if(!game.random.shortElement) assignDebuffs();
+  }
+
+  // For AI checkpoints only, actually move the AI to the calibrated positions.
+  if(t===24){
+    moveBosses();
+    game.aiMoved=false;
+    autoMoveAI();
+    updateResolveAoePositions();
+  } else if(t===50){
+    moveChaosCenterNorth();
+    moveExdeathBetweenWindLong();
+    game.longAiMoved=false;
+    autoMoveLongResolutionAI();
+    updateResolveAoePositions();
+  } else {
+    // Do not move players. Just update live AoEs around the current player positions.
+    if(t>=26) updateResolveAoePositions();
+  }
+
+  updatePhase();
+  updateUI();
+}
+document.getElementById('jumpBtn').onclick=jumpToPhase;document.getElementById('applyObjBtn').onclick=()=>{const o=selectedObj();if(!o)return;o.x=Number(document.getElementById('objX').value);o.y=Number(document.getElementById('objY').value);if(o.r!==undefined)o.r=Number(document.getElementById('objR').value);if(o.inner!==undefined)o.inner=Number(document.getElementById('objH').value);if(game.slots[game.selected])updateSlotTemplateFromDrag(game.slots[game.selected]);updateUI();};document.getElementById('copyBtn').onclick=()=>navigator.clipboard.writeText(document.getElementById('jsonOut').value);
+for(const id of ['calibMode','showAOE','showSlots','showLabels','iconSize','coneLen','coneHalf','controlledSelect','pauseAtChecks']){document.getElementById(id).addEventListener('input',updateUI);}
+function loop(ts){const dt=Math.min(.05,(ts-last)/1000);last=ts;update(dt);draw();requestAnimationFrame(loop);}
+reset();requestAnimationFrame(loop);
+</script></body></html>
