@@ -65,8 +65,68 @@ const slotTemplates={
 let game, keys={}, mouse={x:0,y:0,right:false,dragging:false,dx:0,dy:0}, last=performance.now();
 function clone(o){return JSON.parse(JSON.stringify(o));} function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);} function randPick(a){return a[Math.floor(Math.random()*a.length)];} function normAng(a){while(a<=-Math.PI)a+=Math.PI*2;while(a>Math.PI)a-=Math.PI*2;return a;}
 function log(m){const d=document.createElement('div');d.textContent=m;document.getElementById('logBox').prepend(d);}
-function reset(){game={time:0,phase:'Pre-pull',running:false,paused:false,selected:null,objects:clone(defaultObjects),players:{},slots:clone(slotTemplates),layout:null,random:{shortElement:null,fireWaterSwap:null,latLong:null},debuffStartTime:6,aiMoved:false,kbDone:false,windShown:false,tankMoved:false,tb1Done:false,tb2Done:false,chaosCentered:false,exdeathMoved2:false,latCast:false,cone1Shown:false,cone2Shown:false,longAiMoved:false,longKbDone:false,longWindShown:false,cone1SafeMoved:false,cone2SafeMoved:false,aoeVisibleUntil:{},failed:false,failReason:'',failUntil:0};for(const [id,p] of Object.entries(initialPlayers))game.players[id]={id,x:p.x,y:p.y,facing:p.facing,hero:['T1','H1','D1','D2'].includes(id)?'A':'B',wind:null,fw:null,timer:null};document.getElementById('logBox').innerHTML='';log('Ready. Press Start.');updateSlots();updateUI();}
-function start(){reset();game.running=true;game.paused=false;log('Started.');updateUI();}
+function reset(){game={time:0,phase:'Pre-pull',running:false,paused:false,selected:null,objects:clone(defaultObjects),players:{},slots:clone(slotTemplates),layout:null,random:{shortElement:null,fireWaterSwap:null,latLong:null},debuffStartTime:6,aiMoved:false,kbDone:false,windShown:false,tankMoved:false,tb1Done:false,tb2Done:false,chaosCentered:false,exdeathMoved2:false,latCast:false,cone1Shown:false,cone2Shown:false,longAiMoved:false,longKbDone:false,longWindShown:false,cone1SafeMoved:false,cone2SafeMoved:false,aoeVisibleUntil:{},failed:false,failReason:'',failUntil:0,moves:[]};for(const [id,p] of Object.entries(initialPlayers))game.players[id]={id,x:p.x,y:p.y,facing:p.facing,hero:['T1','H1','D1','D2'].includes(id)?'A':'B',wind:null,fw:null,timer:null};document.getElementById('logBox').innerHTML='';log('Ready. Press Start.');updateSlots();updateUI();}
+function start(){reset();game.running=true;game.paused=false;log('Started.');moveBossesCenterAnimated();updateUI();}
+
+function getEntity(kind,id){return kind==='player'?game.players[id]:game.objects[id];}
+function angleLerp(a,b,t){let d=normAng((b||0)-(a||0));return (a||0)+d*t;}
+function queueMove(kind,id,toX,toY,toFacing,duration){
+  const e=getEntity(kind,id); if(!e)return;
+  game.moves=game.moves.filter(m=>!(m.kind===kind&&m.id===id));
+  game.moves.push({kind,id,fromX:e.x,fromY:e.y,fromFacing:e.facing||0,toX,toY,toFacing:(toFacing===undefined||toFacing===null)?(e.facing||0):toFacing,duration:Math.max(0.01,duration),elapsed:0});
+}
+function updateMoves(dt){
+  if(!game.moves||!game.moves.length)return;
+  const keep=[];
+  for(const m of game.moves){
+    const e=getEntity(m.kind,m.id); if(!e)continue;
+    m.elapsed+=dt;
+    const t=Math.min(1,m.elapsed/m.duration);
+    const ease=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    e.x=m.fromX+(m.toX-m.fromX)*ease;
+    e.y=m.fromY+(m.toY-m.fromY)*ease;
+    if('facing' in e)e.facing=angleLerp(m.fromFacing,m.toFacing,ease);
+    if(m.kind==='player')clampPlayer(e);
+    if(t<1)keep.push(m); else {e.x=m.toX;e.y=m.toY;if('facing' in e)e.facing=m.toFacing;if(m.kind==='player')clampPlayer(e);}
+  }
+  game.moves=keep;
+  updateResolveAoePositions();
+}
+function snapshotPositions(){
+  return {
+    objects:Object.fromEntries(Object.entries(game.objects).map(([id,o])=>[id,{x:o.x,y:o.y,facing:o.facing||0,visible:o.visible}])),
+    players:Object.fromEntries(Object.entries(game.players).map(([id,p])=>[id,{x:p.x,y:p.y,facing:p.facing||0}]))
+  };
+}
+function restorePositions(snap){
+  for(const [id,v] of Object.entries(snap.objects)){if(game.objects[id]){game.objects[id].x=v.x;game.objects[id].y=v.y;game.objects[id].facing=v.facing;game.objects[id].visible=v.visible;}}
+  for(const [id,v] of Object.entries(snap.players)){if(game.players[id]){game.players[id].x=v.x;game.players[id].y=v.y;game.players[id].facing=v.facing;}}
+}
+function animateMutation(mutator,duration){
+  const before=snapshotPositions();
+  mutator();
+  const after=snapshotPositions();
+  restorePositions(before);
+  for(const [id,v] of Object.entries(after.objects)){
+    const b=before.objects[id]; if(!b||!game.objects[id])continue;
+    if(Math.hypot(v.x-b.x,v.y-b.y)>0.1 || Math.abs(normAng((v.facing||0)-(b.facing||0)))>0.01){
+      game.objects[id].visible=v.visible;
+      queueMove('object',id,v.x,v.y,v.facing,duration);
+    }
+  }
+  for(const [id,v] of Object.entries(after.players)){
+    const b=before.players[id]; if(!b||!game.players[id])continue;
+    if(Math.hypot(v.x-b.x,v.y-b.y)>0.1 || Math.abs(normAng((v.facing||0)-(b.facing||0)))>0.01){
+      queueMove('player',id,v.x,v.y,v.facing,duration);
+    }
+  }
+  updateResolveAoePositions();
+}
+function moveBossesCenterAnimated(){
+  queueMove('object','chaos',450,450,game.objects.chaos.facing||0,2.0);
+  queueMove('object','exdeath',450,450,game.objects.exdeath.facing||0,2.0);
+  log('Bosses moving to center.');
+}
 function setTime(t){game.time=Number(t);if(game.time>=6){showCrystals(); if(!game.random.shortElement)assignDebuffs();} if(game.time>=10)moveBosses(); if(game.time>=24 && !game.aiMoved)autoMoveAI(); if(game.time>=26)showShortResolveAoes(); if(game.time>=27&&!game.kbDone)doCrystalKnockback(); if(game.time>=28&&!game.windShown)showWindAoes(); if(game.time>=32&&!game.tankMoved)moveT2ForTankbuster(); if(game.time>=33)showTankbuster(1); if(game.time>=35)showTankbuster(2); if(game.time>=36&&!game.chaosCentered)moveChaosCenterNorth(); if(game.time>=37&&!game.exdeathMoved2)moveExdeathBetweenWindLong(); if(game.time>=41&&!game.latCast)startLatLong(); if(game.time>=45.5&&!game.cone1SafeMoved)moveAIsForLatLongSafe(1); if(game.time>=46)showLatLongHit(1); if(game.time>=47.5&&!game.cone2SafeMoved)moveAIsForLatLongSafe(2); if(game.time>=48)showLatLongHit(2); if(game.time>=50&&!game.longAiMoved)autoMoveLongResolutionAI(); if(game.time>=51)showLongResolveAoes(); if(game.time>=52&&!game.longKbDone)doLongCrystalKnockback(); if(game.time>=53&&!game.longWindShown)showWindAoesSecond(); updatePhase();updateUI();}
 function layoutCrystals(){const layouts=[{wind:'NW',fire:'NE',water:'SW',empty:'SE'},{wind:'NW',fire:'SW',water:'NE',empty:'SE'},{wind:'NE',fire:'NW',water:'SE',empty:'SW'},{wind:'NE',fire:'SE',water:'NW',empty:'SW'},{wind:'SE',fire:'NE',water:'SW',empty:'NW'},{wind:'SE',fire:'SW',water:'NE',empty:'NW'},{wind:'SW',fire:'NW',water:'SE',empty:'NE'},{wind:'SW',fire:'SE',water:'NW',empty:'NE'}];return randPick(layouts);}
 function showCrystals(){if(!game.layout){game.layout=layoutCrystals();for(const c of ['wind','fire','water']){Object.assign(game.objects[c], crystalAnchors[game.layout[c]]);game.objects[c].visible=true;}log(`Crystals: Wind=${game.layout.wind}, Fire=${game.layout.fire}, Water=${game.layout.water}.`);}}
@@ -76,19 +136,15 @@ function basis(base,face){const dx=face.x-base.x,dy=face.y-base.y,d=Math.hypot(d
 function slotMode(){return game && game.time>=50 ? 'long' : 'short';}
 function objFromName(name){return name==='short'?game.objects[shortElement()]:name==='long'?game.objects[longElement()]:game.objects[name];}
 function slotRefs(s,mode=slotMode()){
-  // Wind positions are always built from the Wind crystal while FACING the active crystal.
-  // This makes side handling stable for every random layout:
-  //   positive side = right side while facing the crystal  -> supports
-  //   negative side = left side while facing the crystal   -> DPS
-  if(s.id && s.id.startsWith('wind_')){
-    const activeCrystal = (mode==='long') ? longElement() : shortElement();
-    return {base:game.objects.wind, face:game.objects[activeCrystal]};
-  }
   // First resolution: short slots are based on the short crystal; long slots sit between short and long.
   // Second/long resolution: reverse the active timer/crystal relationship.
   //   long-debuff players use the short_* geometry, but based on the LONG crystal.
   //   short-debuff players use the long_* geometry, sitting between LONG and SHORT.
   if(mode==='long'){
+    // Long-resolution wind stacks are NOT the same facing reference as the first/short solve.
+    // For the second wind solve, wind slots are still based on the Wind crystal, but face the LONG crystal.
+    if(s.id && s.id.startsWith('wind_support')) return {base:game.objects.wind, face:game.objects.exdeath};
+    if(s.id && s.id.startsWith('wind_dps')) return {base:game.objects.wind, face:game.objects[longElement()]};
     if(s.id && s.id.startsWith('short_')) return {base:game.objects[longElement()], face:game.objects.chaos};
     if(s.id && s.id.startsWith('long_')) return {base:game.objects[longElement()], face:game.objects[shortElement()]};
   }
@@ -191,10 +247,11 @@ function validateWindStacks(ids){
 }
 function failMechanic(reason, ids){
   if(game.failed) return;
-  game.failed=true; game.failReason=reason; game.failUntil=game.time+5; keepAoesForFailure(ids);
+  game.failed=true; game.failReason=reason; game.failUntil=Infinity; game.running=false; game.paused=true; game.moves=[]; keepAoesForFailure(ids);
   document.getElementById('statusBox').className='small warn';
   document.getElementById('statusBox').textContent='FAIL: '+reason;
   log('FAIL: '+reason);
+  updateUI();
 }
 
 function hideResolveAoes(){for(const id of ['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','exdeathPBAoe','tankBuster1','tankBuster2','latCone1','latCone2']) if(game.objects[id]) game.objects[id].visible=false;}
@@ -358,17 +415,50 @@ function showLatLongHit(hit){
   if(hit===2&&!game.cone2Shown){log(`${game.random.latLong} second cones.`);game.cone2Shown=true;}
 }
 function updatePhase(){let p='Pre-pull';if(game.time>0&&game.time<2)p='Bosses moving center';else if(game.time<5.5&&game.time>=2)p='Bowels of Agony cast';else if(game.time>=5.5&&game.time<10)p='Debuffs / read';else if(game.time>=10&&game.time<20)p='Boss movement';else if(game.time>=20&&game.time<24)p='Lightning III cast';else if(game.time>=24&&game.time<26)p='AI moving';else if(game.time>=26&&game.time<27)p='Short debuffs + Lightning III';else if(game.time>=27&&game.time<28)p='Crystal knockback';else if(game.time>=28&&game.time<29)p='Wind stacks';else if(game.time>=29&&game.time<36)p='Thunder III tankbusters';else if(game.time>=36&&game.time<41)p='Reposition for Lat/Long';else if(game.time>=41&&game.time<46)p='Lat/Long + Trance cast';else if(game.time>=46&&game.time<48)p='Lat/Long first cones';else if(game.time>=48&&game.time<50)p='Lat/Long second cones';else if(game.time>=50&&game.time<51)p='Long AI movement';else if(game.time>=51&&game.time<52)p='Long debuffs resolve';else if(game.time>=52&&game.time<53)p='Long crystal knockback';else if(game.time>=53)p='Second Wind stacks';game.phase=p;}
-function update(dt){if(!game)return;handleMovement(dt);if(!game.running||game.paused)return;const old=game.time;game.time+=dt;if(old<2&&game.time>=2)log('Bosses reached center.');if(old<5.5&&game.time>=5.5)log('Bowels of Agony complete.');if(old<6&&game.time>=6){showCrystals();assignDebuffs();}if(old<10&&game.time>=10){moveBosses();log('Bosses moved for first resolution.');}if(old<20&&game.time>=20)log('Exdeath starts Lightning III.');if(old<24&&game.time>=24)autoMoveAI();if(old<26&&game.time>=26){showShortResolveAoes();log('Short debuffs and Lightning III resolve.');}if(old<27&&game.time>=27)doCrystalKnockback();if(old<28&&game.time>=28){showWindAoes();log('Wind stacks resolve.');}if(old<29&&game.time>=29)log('Exdeath starts Thunder III tankbuster cast.');if(old<32&&game.time>=32)moveT2ForTankbuster();if(old<33&&game.time>=33)showTankbuster(1);if(old<35&&game.time>=35)showTankbuster(2);if(old<36&&game.time>=36)moveChaosCenterNorth();if(old<37&&game.time>=37)moveExdeathBetweenWindLong();if(old<41&&game.time>=41)startLatLong();if(old<45.5&&game.time>=45.5)moveAIsForLatLongSafe(1);if(old<46&&game.time>=46){showLatLongHit(1);}if(old<47.5&&game.time>=47.5)moveAIsForLatLongSafe(2);if(old<48&&game.time>=48){showLatLongHit(2);}if(old<50&&game.time>=50)autoMoveLongResolutionAI();if(old<51&&game.time>=51){showLongResolveAoes();log('Long debuffs resolve.');}if(old<52&&game.time>=52)doLongCrystalKnockback();if(old<53&&game.time>=53){showWindAoesSecond();}updatePhase();updateUI();}
+function update(dt){
+  if(!game)return;
+  handleMovement(dt);
+  if(!game.running||game.paused)return;
+  const old=game.time;
+  game.time+=dt;
+  updateMoves(dt);
+  if(old<2&&game.time>=2)log('Bosses reached center.');
+  if(old<5.5&&game.time>=5.5)log('Bowels of Agony complete.');
+  if(old<6&&game.time>=6){showCrystals();assignDebuffs();}
+  if(old<8&&game.time>=8){animateMutation(()=>moveBosses(),2.0);log('Bosses moving for first resolution.');}
+  if(old<10&&game.time>=10){log('Bosses reached first-resolution positions.');}
+  if(old<20&&game.time>=20)log('Exdeath starts Lightning III.');
+  if(old<24&&game.time>=24)animateMutation(()=>autoMoveAI(),2.0);
+  if(old<26&&game.time>=26){updateMoves(10);showShortResolveAoes();log('Short debuffs and Lightning III resolve.');if(game.failed)return;}
+  if(old<27&&game.time>=27){doCrystalKnockback();if(game.failed)return;}
+  if(old<28&&game.time>=28){showWindAoes();log('Wind stacks resolve.');if(game.failed)return;}
+  if(old<29&&game.time>=29)log('Exdeath starts Thunder III tankbuster cast.');
+  if(old<32&&game.time>=32)animateMutation(()=>moveT2ForTankbuster(),1.0);
+  if(old<33&&game.time>=33){updateMoves(10);showTankbuster(1);if(game.failed)return;}
+  if(old<35&&game.time>=35){showTankbuster(2);if(game.failed)return;}
+  if(old<34&&game.time>=34)animateMutation(()=>moveChaosCenterNorth(),2.0);
+  if(old<35&&game.time>=35)animateMutation(()=>moveExdeathBetweenWindLong(),2.0);
+  if(old<41&&game.time>=41){startLatLong();if(game.failed)return;}
+  if(old<45&&game.time>=45)animateMutation(()=>moveAIsForLatLongSafe(1),1.0);
+  if(old<46&&game.time>=46){updateMoves(10);showLatLongHit(1);if(game.failed)return;}
+  if(old<47&&game.time>=47)animateMutation(()=>moveAIsForLatLongSafe(2),1.0);
+  if(old<48&&game.time>=48){updateMoves(10);showLatLongHit(2);if(game.failed)return;}
+  if(old<50&&game.time>=50)animateMutation(()=>autoMoveLongResolutionAI(),1.0);
+  if(old<51&&game.time>=51){updateMoves(10);showLongResolveAoes();log('Long debuffs resolve.');if(game.failed)return;}
+  if(old<52&&game.time>=52){doLongCrystalKnockback();if(game.failed)return;}
+  if(old<53&&game.time>=53){showWindAoesSecond();if(game.failed)return;}
+  updatePhase();
+  updateUI();
+}
 function handleMovement(dt){const id=document.getElementById('controlledSelect').value;if(id==='Spectator')return;const p=game?.players[id];if(!p)return;const speed=(keys.Shift?85:190)*dt;let dx=0,dy=0;if(keys.w||keys.W)dy-=speed;if(keys.s||keys.S)dy+=speed;if(keys.a||keys.A)dx-=speed;if(keys.d||keys.D)dx+=speed;p.x+=dx;p.y+=dy;if(keys.q||keys.Q)p.facing-=2.7*dt;if(keys.e||keys.E)p.facing+=2.7*dt;if(mouse.right)p.facing=Math.atan2(mouse.y-p.y,mouse.x-p.x);clampPlayer(p);}
 function clampPlayer(p){const o=game.objects.arena,dx=p.x-o.x,dy=p.y-o.y,d=Math.hypot(dx,dy),m=o.r-PLAYER_R-3;if(d>m){p.x=o.x+dx/d*m;p.y=o.y+dy/d*m;}}
 function draw(){ctx.clearRect(0,0,W,H);drawArena();if(document.getElementById('showAOE').checked)drawAoes();drawObjects();drawCastBar();if(document.getElementById('showSlots').checked)drawSlots();drawPlayers();}
 function drawArena(){const o=game.objects.arena;ctx.fillStyle='rgba(20,35,55,.40)';ctx.strokeStyle=o.color;ctx.lineWidth=4;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();ctx.stroke();}
 
 function drawAoes(){
-  if(game&&game.failed&&game.time>game.failUntil){game.failed=false;document.getElementById('statusBox').className='small ok';document.getElementById('statusBox').textContent='Ready.';}
   if(game&&game.objects)updateResolveAoePositions();
   for(const id of ['windAoe1','windAoe2','fireDonutL','fireDonutR','waterSpread1','waterSpread2','exdeathPBAoe','tankBuster1','tankBuster2','latCone1','latCone2']){
-    const o=game.objects[id];if(!o||!o.visible)continue;if(game.aoeVisibleUntil&&game.aoeVisibleUntil[id]!==undefined&&game.time>game.aoeVisibleUntil[id]){o.visible=false;delete game.aoeVisibleUntil[id];continue;}ctx.save();ctx.fillStyle=o.color;ctx.strokeStyle=o.color.replace(/\.\d+\)/,'.9)');ctx.lineWidth=3;
+    const o=game.objects[id];if(!o||!o.visible)continue;if(!game.failed&&game.aoeVisibleUntil&&game.aoeVisibleUntil[id]!==undefined&&game.time>game.aoeVisibleUntil[id]){o.visible=false;delete game.aoeVisibleUntil[id];continue;}ctx.save();ctx.fillStyle=o.color;ctx.strokeStyle=o.color.replace(/\.\d+\)/,'.9)');ctx.lineWidth=3;
     if(o.type==='donut'){
       ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.arc(o.x,o.y,o.inner,0,Math.PI*2,true);ctx.fill('evenodd');ctx.stroke();ctx.beginPath();ctx.arc(o.x,o.y,o.inner,0,Math.PI*2);ctx.stroke();
     }else if(o.type==='cone'){
@@ -417,11 +507,11 @@ window.addEventListener('mouseup',()=>{mouse.dragging=false;mouse.right=false;})
 canvas.addEventListener('wheel',e=>{const o=game.objects[game.selected]||game.slots[game.selected];if(!o)return;e.preventDefault();const d=e.deltaY<0?4:-4;if(o.type==='donut'&&e.shiftKey)o.inner=Math.max(5,o.inner+d);else o.r=Math.max(5,(o.r||20)+d);updateUI();});
 function updateSlotTemplateFromDrag(s){const refs=slotRefs(s,slotMode());const b=basis(refs.base,refs.face);const vx=s.x-refs.base.x,vy=s.y-refs.base.y;s.forward=Number((vx*b.ux+vy*b.uy).toFixed(1));s.side=Number((vx*b.rx+vy*b.ry).toFixed(1));}
 window.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' '){e.preventDefault();if(game.time<=0)start();else togglePause();}});window.addEventListener('keyup',e=>{keys[e.key]=false;});
-function togglePause(){game.paused=!game.paused;game.running=!game.paused;updateUI();}
-function updateUI(){document.getElementById('phaseLabel').textContent=game.phase;document.getElementById('timerLabel').textContent=game.time.toFixed(1)+'s';document.getElementById('selectedLabel').textContent=game.selected||'None';document.getElementById('pauseBtn').textContent=game.paused?'▶ Resume':'⏸ Pause';const o=selectedObj();document.getElementById('objName').textContent=o?o.label||o.id:'None';document.getElementById('objX').value=o?Math.round(o.x):'';document.getElementById('objY').value=o?Math.round(o.y):'';document.getElementById('objR').value=o&&o.r?Math.round(o.r):'';document.getElementById('objH').value=o&&o.inner?Math.round(o.inner):'';updateDebuffTable();exportJson();}
+function togglePause(){if(game.failed)return;game.paused=!game.paused;game.running=!game.paused;updateUI();}
+function updateUI(){document.getElementById('phaseLabel').textContent=game.phase;document.getElementById('timerLabel').textContent=game.time.toFixed(1)+'s';document.getElementById('selectedLabel').textContent=game.selected||'None';document.getElementById('pauseBtn').textContent=game.failed?'⛔ Failed':(game.paused?'▶ Resume':'⏸ Pause');const o=selectedObj();document.getElementById('objName').textContent=o?o.label||o.id:'None';document.getElementById('objX').value=o?Math.round(o.x):'';document.getElementById('objY').value=o?Math.round(o.y):'';document.getElementById('objR').value=o&&o.r?Math.round(o.r):'';document.getElementById('objH').value=o&&o.inner?Math.round(o.inner):'';updateDebuffTable();exportJson();}
 function updateDebuffTable(){const tb=document.getElementById('debuffTable');tb.innerHTML='';for(const p of Object.values(game.players)){const tr=document.createElement('tr');tr.innerHTML=`<td>${p.id}</td><td>${p.hero||''}</td><td>${p.wind?p.wind.replace('wind',''):''}</td><td>${p.fw?`${p.fw} ${debuffRemaining(p)}`:''}</td>`;tb.appendChild(tr);}}
-function exportJson(){const out={version:'p3_bowels_timeline_calibrator_v25_auto_cones_jump_keep_positions',time:Number(game.time.toFixed(1)),phase:game.phase,objects:game.objects,players:Object.fromEntries(Object.entries(game.players).map(([id,p])=>[id,{x:Math.round(p.x),y:Math.round(p.y),facing:Number(p.facing.toFixed(3))}])),slots:Object.fromEntries(Object.entries(game.slots).map(([id,s])=>[id,{x:Number(s.x.toFixed(1)),y:Number(s.y.toFixed(1)),base:s.base,face:s.face,forward:s.forward,side:s.side}])),random:game.random,layout:game.layout,iconSize:Number(document.getElementById('iconSize').value)};document.getElementById('jsonOut').value=JSON.stringify(out,null,2);}
-document.getElementById('startBtn').onclick=start;document.getElementById('pauseBtn').onclick=()=>{if(game.time<=0)start();else togglePause();};document.getElementById('resetBtn').onclick=reset;document.getElementById('exportBtn').onclick=()=>{exportJson();log('Exported.');};function jumpToPhase(){
+function exportJson(){const out={version:'p3_bowels_final_smooth_animations_fail_freeze',time:Number(game.time.toFixed(1)),phase:game.phase,objects:game.objects,players:Object.fromEntries(Object.entries(game.players).map(([id,p])=>[id,{x:Math.round(p.x),y:Math.round(p.y),facing:Number(p.facing.toFixed(3))}])),slots:Object.fromEntries(Object.entries(game.slots).map(([id,s])=>[id,{x:Number(s.x.toFixed(1)),y:Number(s.y.toFixed(1)),base:s.base,face:s.face,forward:s.forward,side:s.side}])),random:game.random,layout:game.layout,iconSize:Number(document.getElementById('iconSize').value)};document.getElementById('jsonOut').value=JSON.stringify(out,null,2);}
+document.getElementById('startBtn').onclick=start;document.getElementById('pauseBtn').onclick=()=>{if(game.failed||game.time<=0)start();else togglePause();};document.getElementById('resetBtn').onclick=reset;document.getElementById('exportBtn').onclick=()=>{exportJson();log('Exported.');};function jumpToPhase(){
   const t=Number(document.getElementById('jumpPhase').value);
 
   // IMPORTANT: Jumping phases should not replay the full timeline or reposition everyone.
